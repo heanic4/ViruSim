@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30309.148
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "ViruSim", "ViruSim\ViruSim.vbproj", "{4E62E2B0-5BB1-45EB-BBD8-A09DCACA9CEA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4E62E2B0-5BB1-45EB-BBD8-A09DCACA9CEA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E62E2B0-5BB1-45EB-BBD8-A09DCACA9CEA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E62E2B0-5BB1-45EB-BBD8-A09DCACA9CEA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E62E2B0-5BB1-45EB-BBD8-A09DCACA9CEA}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {73A5EBAD-C7DE-46C6-AB39-5E4968472D8E}
+	EndGlobalSection
+EndGlobal
