@@ -11,7 +11,7 @@ const virusim = {
     frameDelay: 5,
     renderDelay: 100,
     settings: {
-        movementRate: .005,
+        movementRate: .0005,
         infectionMinTime: 10,
         infectionMaxTime: 200,
         immuneTimeMin: 800,
@@ -27,12 +27,12 @@ const virusim = {
         travelSpeed: .1,
         infectionZeroFrame: null,
         maxActive: 0,
-        leaveHomeMod: .75,
+        leaveHomeMod: 1,
         leaveNotHomeMod: 2,
-        goHomeRate: .75,
+        goHomeRate: .5,
         minInteractPerFrame: 1,
         maxInteractPerFrame: 10,
-        isolateFamilyChance: 0.005,
+        isolateFamilyChance: 0.00005,
         familySize: 5
     },
     randBetweenInt: function (min, max) {
@@ -134,7 +134,7 @@ const virusim = {
         return opts[virusim.randBetweenInt(0, opts.length)];
     },
     checkIsolateByFamilyInfection: function (person) {
-        if (Math.random() >= (1 - virusim.settings.isolateFamilyChance * person.family.infectionCount)) {
+        if (Math.random() >= (1 - virusim.settings.isolateFamilyChance)) {
             person.family.isolated = true;
         }
     },
@@ -214,7 +214,9 @@ const virusim = {
         for (var g = infected.length - 1; g > -1; g--) {
             var person = infected[g];
 
-            virusim.checkIsolateByFamilyInfection(person);
+            if (!person.family.isolated) {
+                virusim.checkIsolateByFamilyInfection(person);
+            }
 
             person.infectedTime++;
 
@@ -592,12 +594,12 @@ const virusim = {
             p.infectionEnd = virusim.randBetweenInt(virusim.settings.infectionMinTime, virusim.settings.infectionMaxTime);
         }
 
-        var fam = { people: [] };
+        var fam = { people: [], infectionCount: 0, isolated: false };
         virusim.families.push(fam);
 
         for (var g = 0; g < virusim.people.length; g++) {
             if (fam.people.length >= virusim.settings.familySize) {
-                fam = { people: [] };
+                fam = { people: [], infectionCount: 0, isolated: false };
                 virusim.families.push(fam);
             }
 
