@@ -4,25 +4,35 @@ const virusim = {
     canvas: null,
     groups: [],
     people: [],
+    families: [],
+    frameData: [],
     frames: 0,
     infectedTotal: 0,
+    frameDelay: 10,
     settings: {
-        movementRate: .01,
+        movementRate: .0005,
         infectionMinTime: 10,
         infectionMaxTime: 200,
         immuneTimeMin: 800,
         immuneTimeMax: 1500,
-        isolationChance: .01,
-        deathChance: .00005,
+        isolationChance: 0.01,
+        deathChance: .0001,
         infectedStart: 100,
-        groupsX: 10,
-        groupsY: 10,
-        totalPopulation: 5000,
-        minResist: .999,
-        maxResist: .999999,
+        groupsX: 20,
+        groupsY: 20,
+        totalPopulation: 20000,
+        minResist: .99,
+        maxResist: 1,
         travelSpeed: .1,
         infectionZeroFrame: null,
-        maxActive: 0
+        maxActive: 0,
+        leaveHomeMod: .75,
+        leaveNotHomeMod: 2,
+        goHomeRate: .75,
+        minInteractPerFrame: 1,
+        maxInteractPerFrame: 10,
+        isolateFamilyChance: 0.005,
+        familySize: 5
     },
     randBetweenInt: function (min, max) {
         return Math.floor(Math.random() * (max - min)) + min;
@@ -30,21 +40,36 @@ const virusim = {
     randBetween: function (min, max) {
         return Math.random() * (max - min) + min;
     },
-    randomGroup: function () {
-        return virusim.groups[virusim.randBetweenInt(0, virusim.groups.length)];
+    randomGroup: function (currGroup) {
+
+        var grp = virusim.groups[virusim.randBetweenInt(0, virusim.groups.length)];
+
+        while (grp == currGroup) {
+            grp = virusim.groups[virusim.randBetweenInt(0, virusim.groups.length)];
+        }
+
+        return grp;
     },
     randomPerson: function () {
         return virusim.people[virusim.randBetweenInt(0, virusim.people.length)];
     },
-    checkMove: function () {
-        return Math.random() > (1 - virusim.settings.movementRate);
+    checkMove: function (isHome) {
+        return Math.random() > (1 - (virusim.settings.movementRate * (isHome ? virusim.settings.leaveHomeMod : virusim.settings.leaveNotHomeMod)));
+    },
+    moveHome: function (isHome) {
+        return !isHome && Math.random() >= virusim.settings.goHomeRate;
     },
     getPersonGroupLocation: function (p, g) {
+
+        if (g == null) {
+            return { x: 0, y: 0 };
+        }
+
         var tot = g.members.length * 1.0;
 
         var ind = g.members.indexOf(p) * 1.0;
 
-        var d = Math.min(50, Math.max(25, Math.sqrt((10 * g.members.length) / Math.PI)));
+        var d = Math.min(35, Math.max(15, Math.sqrt((10 * g.members.length) / Math.PI)));
 
         if (ind < 0) {
             ind = 0.0;
@@ -75,7 +100,7 @@ const virusim = {
     },
     renderPerson: function (x, y, infected, infectedTime, infectionEnd, immune) {
         virusim.ctx.beginPath();
-        virusim.ctx.arc(x, y, 3, 0, 2 * Math.PI);
+        virusim.ctx.arc(x, y, 2, 0, 2 * Math.PI);
 
         if (infected) {
             virusim.ctx.fillStyle = "rgba(50, " + (100 + Math.min(1, (infectedTime / infectionEnd)) * 155) + ", 50, 1.0)";
@@ -90,16 +115,105 @@ const virusim = {
         }
         virusim.ctx.fill();
     },
-    checkInfect: function (person) {
+    checkInfect: function (infecter, person) {
         return Math.random() >= person.resistance;
     },
-    processPersonFrame: function (person) {
-        if (person.infected) {
+    getRandomNonFamilyNonTransitionFromGroup: function (person) {
+
+        var opts = [];
+
+        for (var g = 0; g < person.currGroup.members.length; g++) {
+            var p = person.currGroup.members[g];
+
+            if (p != person && p.transitionPerc >= 1 && person.family.people.indexOf(p) < 0) {
+                opts.push(p);
+            }
+        }
+
+        return opts[virusim.randBetweenInt(0, opts.length)];
+    },
+    checkIsolateByFamilyInfection: function (person) {
+        if (Math.random() >= (1 - virusim.settings.isolateFamilyChance * person.family.infectionCount)) {
+            person.family.isolated = true;
+        }
+    },
+    processGroupFrame: function (group) {
+        var infected = [];
+        var interactable = [];
+        var clean = [];
+
+        for (var g = 0; g < group.members.length; g++) {
+            var p = group.members[g];
+            if (!p.dead && p.transitionPerc >= 1 && !p.isolated && !p.family.isolated) {
+                interactable.push(p);
+                if (p.infected) {
+                    infected.push(p);
+                }
+                else {
+                    clean.push(p);
+                }
+            }
+        }
+
+        for (var g = clean.length - 1; g > -1; g--) {
+            var person = clean[g];
+
+            person.immuneTime--;
+
+            if (person.transitionPerc >= 1 && person.immuneTime <= 0) {
+
+                for (var g = 0; g < person.family.people.length; g++) {
+                    var p2 = person.family.people[g];
+
+                    if (p2 != person && p2.currGroup == person.currGroup) {
+                        if (p2.infected) {
+                            if (!p2.dead) {
+                                if (virusim.checkInfect(p2, person)) {
+                                    virusim.infectedTotal++;
+                                    person.infected = true;
+                                    person.infectedTime = 0;
+                                    person.family.infectionCount++;
+                                    person.infectionEnd = virusim.randBetweenInt(virusim.settings.infectionMinTime, virusim.settings.infectionMaxTime);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                var interact = virusim.randBetweenInt(virusim.settings.minInteractPerFrame, virusim.settings.maxInteractPerFrame + 1);
+
+                for (var g = 0; g < interact; g++) {
+                    var p2 = interactable[virusim.randBetweenInt(0, interactable.length)];
+
+                    while (p2 == person) {
+                        p2 = interactable[virusim.randBetweenInt(0, interactable.length)];
+                    }
+                    
+                    if (p2.infected) {
+                        if (virusim.checkInfect(p2, person)) {
+                            virusim.infectedTotal++;
+                            person.infected = true;
+                            person.infectedTime = 0;
+                            person.family.infectionCount++;
+                            person.infectionEnd = virusim.randBetweenInt(virusim.settings.infectionMinTime, virusim.settings.infectionMaxTime);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (var g = infected.length - 1; g > -1; g--) {
+            var person = infected[g];
+
+            virusim.checkIsolateByFamilyInfection(person);
+
             person.infectedTime++;
 
             if (Math.random() >= (1 - virusim.settings.deathChance)) {
                 person.dead = true;
-                if (person.lastGroup.members.indexOf(person) >= 0) {
+                if (person.lastGroup != null && person.lastGroup.members.indexOf(person) >= 0) {
                     person.lastGroup.members.splice(person.lastGroup.members.indexOf(person), 1);
                 }
 
@@ -107,6 +221,10 @@ const virusim = {
 
                 person.lastGroup = null;
                 person.currGroup = null;
+                person.family.infectionCount--;
+                if (person.family.infectionCount <= 0) {
+                    person.family.isolated = false;
+                }
                 return;
             }
 
@@ -117,6 +235,58 @@ const virusim = {
             if (person.infectionEnd <= person.infectedTime) {
                 person.infected = false;
                 person.isolated = false;
+
+                person.family.infectionCount--;
+                if (person.family.infectionCount <= 0) {
+                    person.family.isolated = false;
+                }
+
+                person.immuneTime = virusim.randBetweenInt(virusim.settings.immuneTimeMin, virusim.settings.immuneTimeMax);
+            }
+        }
+    },
+    processPersonFrame: function (person) {
+
+        if (person.dead) {
+            return;
+        }
+
+        if (person.infected) {
+
+            virusim.checkIsolateByFamilyInfection(person);
+
+            person.infectedTime++;
+
+            if (Math.random() >= (1 - virusim.settings.deathChance)) {
+                person.dead = true;
+                if (person.lastGroup != null && person.lastGroup.members.indexOf(person) >= 0) {
+                    person.lastGroup.members.splice(person.lastGroup.members.indexOf(person), 1);
+                }
+
+                person.currGroup.members.splice(person.currGroup.members.indexOf(person), 1);
+
+                person.lastGroup = null;
+                person.currGroup = null;
+                person.family.infectionCount--;
+                if (person.family.infectionCount <= 0) {
+                    person.family.isolated = false;
+                }
+                return;
+            }
+
+            if (!person.isolated) {
+                person.isolated = Math.random() >= (1 - virusim.settings.isolationChance);
+            }
+
+            if (person.infectionEnd <= person.infectedTime) {
+                person.infected = false;
+                person.isolated = false;
+
+                person.family.infectionCount--;
+                if (person.family.infectionCount <= 0) {
+                    person.family.isolated = false;
+                }
+
                 person.immuneTime = virusim.randBetweenInt(virusim.settings.immuneTimeMin, virusim.settings.immuneTimeMax);
             }
         }
@@ -124,18 +294,42 @@ const virusim = {
             person.immuneTime--;
 
             if (person.transitionPerc >= 1 && person.immuneTime <= 0) {
-                for (var g = 0; g < person.currGroup.members.length; g++) {
-                    var p2 = person.currGroup.members[g];
+
+                for (var g = 0; g < person.family.people.length; g++) {
+                    var p2 = person.family.people[g];
+
+                    if (p2 != person && p2.currGroup == person.currGroup) {
+                        if (p2.infected) {
+                            if (!p2.dead) {
+                                if (virusim.checkInfect(p2, person)) {
+                                    virusim.infectedTotal++;
+                                    person.infected = true;
+                                    person.infectedTime = 0;
+                                    person.family.infectionCount++;
+                                    person.infectionEnd = virusim.randBetweenInt(virusim.settings.infectionMinTime, virusim.settings.infectionMaxTime);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                var interact = virusim.randBetweenInt(virusim.settings.minInteractPerFrame, virusim.settings.maxInteractPerFrame + 1);
+
+                for (var g = 0; g < interact; g++) {
+                    var p2 = virusim.getRandomNonFamilyNonTransitionFromGroup(person);
 
                     if (person != p2) {
                         if (p2.transitionPerc >= 1) {
                             if (p2.infected) {
-                                if (!p2.isolated && !p2.dead) {
-                                    if (virusim.checkInfect(person)) {
+                                if (!p2.isolated && !p2.family.isolated && !p2.dead) {
+                                    if (virusim.checkInfect(p2, person)) {
                                         virusim.infectedTotal++;
                                         person.infected = true;
                                         person.infectedTime = 0;
+                                        person.family.infectionCount++;
                                         person.infectionEnd = virusim.randBetweenInt(virusim.settings.infectionMinTime, virusim.settings.infectionMaxTime);
+                                        return;
                                     }
                                 }
                             }
@@ -145,30 +339,105 @@ const virusim = {
             }
         }
     },
+    genderGraphLine: function (color, entries, max) {
+
+        var ctx = virusim.graphCTX;
+
+        ctx.beginPath();
+
+        ctx.moveTo(0, 300 - 300 * (entries[0] / max));
+
+        ctx.strokeStyle = color;
+
+        var xd = 800 / (entries.length * 1.0);
+
+        for (var g = 1; g < entries.length; g++) {
+            ctx.lineTo(xd * g, 300 - 300 * (entries[g] / max));
+        }
+
+        ctx.stroke();
+    },
+    renderGraph: function () {
+        var tots = [];
+        var currs = [];
+        var imms = [];
+        var dths = [];
+        var homs = [];
+        var isos = [];
+
+        var maxT = 0;
+        var maxC = 0;
+        var maxI = 0;
+        var maxD = 0;
+        var maxH = 0;
+        var maxIS = 0;
+
+        for (var g = 0; g < virusim.frameData.length; g++) {
+            var d = virusim.frameData[g];
+
+            maxT = Math.max(maxT, d.total);
+            maxC = Math.max(maxC, d.current);
+            maxI = Math.max(maxI, d.immune);
+            maxD = Math.max(maxD, d.dead);
+            maxH = Math.max(maxH, d.home);
+            maxIS = Math.max(maxIS, d.isolated);
+
+            tots.push(d.total);
+            currs.push(d.current);
+            imms.push(d.immune);
+            dths.push(d.dead);
+            homs.push(d.home);
+            isos.push(d.isolated);
+        }
+
+        virusim.graphCTX.clearRect(0, 0, 800, 300);
+
+        virusim.genderGraphLine("rgba(255, 255, 255, 1.0)", tots, maxT);
+
+        virusim.genderGraphLine("rgba(50, 200, 50, 1.0)", currs, maxC);
+
+        virusim.genderGraphLine("rgba(70, 70, 230, 1.0)", imms, maxI);
+
+        virusim.genderGraphLine("rgba(170, 50, 180, 1.0)", dths, maxD);
+
+        virusim.genderGraphLine("rgba(225, 75, 50, 1.0)", homs, maxH);
+
+        virusim.genderGraphLine("rgba(150, 150, 150, 1.0)", isos, maxIS);
+    },
     renderFrame: function () {
 
         virusim.frames++;
         virusim.ctx.clearRect(0, 0, 800, 800);
+
+        for (var g = 0; g < virusim.groups.length; g++) {
+            //virusim.processGroupFrame(virusim.groups[g]);
+        }
 
         for (var g = 0; g < virusim.people.length; g++) {
             var p = virusim.people[g];
 
             if (!p.dead) {
 
-                virusim.processPersonFrame(p);
+                //virusim.processPersonFrame(p);
 
                 if (p.transitionPerc < 1) {
                     p.transitionPerc += virusim.settings.travelSpeed;
                     virusim.renderTransitionPerson(p);
                 }
                 else {
-                    if (virusim.checkMove()) {
+                    if (virusim.checkMove(p.currGroup == p.homeGroup)) {
                         if (p.lastGroup != null) {
                             p.lastGroup.members.splice(p.lastGroup.members.indexOf(p), 1);
                         }
 
                         p.lastGroup = p.currGroup;
-                        p.currGroup = virusim.randomGroup();
+
+                        if (virusim.moveHome(p.currGroup == p.homeGroup)) {
+                            p.currGroup = p.homeGroup;
+                        }
+                        else {
+                            p.currGroup = virusim.randomGroup(p.currGroup);
+                        }
 
                         p.currGroup.members.push(p);
 
@@ -185,6 +454,8 @@ const virusim = {
         var cnt = 0;
         var icnt = 0;
         var dcnt = 0;
+        var hcnt = 0;
+        var iscnt = 0;
 
         for (var g = 0; g < virusim.people.length; g++) {
             if (virusim.people[g].dead) {
@@ -197,23 +468,49 @@ const virusim = {
                 if (virusim.people[g].immuneTime > 0) {
                     icnt++;
                 }
+                if (virusim.people[g].currGroup == virusim.people[g].homeGroup) {
+                    hcnt++;
+                }
+                if (virusim.people[g].isolated || virusim.people[g].family.isolated) {
+                    iscnt++;
+                }
             }
         }
+
+        virusim.frameData.push({ total: virusim.infectedTotal, current: cnt, immune: icnt, dead: dcnt, home: hcnt, isolated: iscnt });
 
         virusim.settings.maxActive = Math.max(cnt, virusim.settings.maxActive);
 
         if (cnt == 0 && virusim.settings.infectionZeroFrame == null) {
             virusim.settings.infectionZeroFrame = virusim.frames;
+            virusim.renderGraph();
         }
 
-        $("#stats").html("Total Infections: " + virusim.infectedTotal + "  Infected: " + cnt + "  Max Infected: " + virusim.settings.maxActive + "  Immune: " + icnt + "  Dead: " + dcnt + "  Frames: " + (cnt == 0 ? virusim.settings.infectionZeroFrame : virusim.frames));
+        $("#stats").html("Total Infections: " + virusim.infectedTotal +
+            "  Infected: " + cnt +
+            "  Max Infected: " + virusim.settings.maxActive +
+            "  Immune: " + icnt +
+            "  Dead: " + dcnt +
+            "  Home: " + hcnt +
+            "  Isolated: " + iscnt +
+            "  Frames: " + (cnt == 0 ? virusim.settings.infectionZeroFrame : virusim.frames));
 
+        if (virusim.settings.infectionZeroFrame == null && virusim.frames % 5 == 0) {
+            virusim.renderGraph();
+        }
+
+
+        if (!virusim.stopped) {
+            virusim.timeout = setTimeout(virusim.renderFrame, virusim.frameDelay);
+        }
         //alert("NO INFECTIONS. Total Infected: " + virusim.infectedTotal);
     },
     init: function () {
         virusim.canvas = $("#virusim")[0];
         virusim.ctx = virusim.canvas.getContext("2d");
-        virusim.interval = setInterval(virusim.renderFrame, 100);
+        virusim.graphCanvas = $("#virusim-graph")[0];
+        virusim.graphCTX = virusim.graphCanvas.getContext("2d");
+        //virusim.interval = setInterval(virusim.renderFrame, 50);
 
         var groupWid = virusim.settings.groupsX;
         var groupHei = virusim.settings.groupsY;
@@ -249,6 +546,7 @@ const virusim = {
                 resistance: virusim.randBetween(minResistance, maxResistance)
             });
 
+            virusim.people[virusim.people.length - 1].homeGroup = virusim.people[virusim.people.length - 1].currGroup;
             virusim.people[virusim.people.length - 1].currGroup.members.push(virusim.people[virusim.people.length - 1]);
         }
 
@@ -263,6 +561,21 @@ const virusim = {
             p.infectedTime = 0;
             p.infectionEnd = virusim.randBetweenInt(virusim.settings.infectionMinTime, virusim.settings.infectionMaxTime);
         }
+
+        var fam = { people: [] };
+        virusim.families.push(fam);
+
+        for (var g = 0; g < virusim.people.length; g++) {
+            if (fam.people.length >= virusim.settings.familySize) {
+                fam = { people: [] };
+                virusim.families.push(fam);
+            }
+
+            fam.people.push(virusim.people[g]);
+            virusim.people[g].family = fam;
+        }
+
+        virusim.renderFrame();
     }
 };
 

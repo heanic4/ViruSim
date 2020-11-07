@@ -7,10 +7,12 @@ End Code
 <script type="text/javascript" src="~/Scripts/virusim.js"></script>
 
 
-<h2 id="stats">
-</h2>
 
 <div class="virusim" style="background-color: black;">
-    <canvas id="virusim" width="800" height="800" style="width: 800px;height: 800px;">
-    </canvas>
+    <canvas id="virusim" width="800" height="800" style="width: 800px;height: 800px;"></canvas>
+</div>
+
+<h4 id="stats"></h4>
+<div class="virusim-graph" style="background-color: black;margin-top: 10px;">
+    <canvas id="virusim-graph" width="800" height="300" style="width: 800px;height: 300px;"></canvas>
 </div>
